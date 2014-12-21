@@ -5,6 +5,48 @@ var queryUrl = baseUrl + '/query';
 var username = "ois.seminar";
 var password = "ois4fri";
 
+var mase = [];
+var visine = [];
+var steviloMas = 0;
+var steviloVisin = 0;
+var globalniItm = 0;
+var stGrafov = 0;
+var graf = 0;
+
+// TABELA ZA TESTIRANJE
+/*var tabelca = [ ["Eritreja", 19.85, "ERI"],
+					["Nepal", 20.55, "NPL"],
+					["Afganistan", 21.01, "AFG"],
+					["Namibija", 22.0, "NAM"],
+					["Kirgizistan", 22.90, "KG"],
+					["Rusija", 23.25, "RUS"],
+					["Uzbekistan", 23.80, "UZB"],
+					["Nizozemska", 24.14, "NL"],
+					["Albanija", 24.53, "AL"],
+					["Slovenija", 25.38, "SVN"],
+					["Argentina", 26.44, "ARG"],
+					["Bahami", 27.09, "BHS"], 
+					["ZDA", 27.82, "USA"],
+					["Samoa", 28.34, "WSM"],
+					["Tonga", 32.90, "TON"] ];*/
+					
+var svetovniItm = [];
+
+$.getJSON("itmPoDrzavah.json", function(json) {
+    console.log(json);
+    console.log( "JSON Data: " + json.drzave[2].long );
+    for(var i = 0; i < json.drzave.length; i++){
+    	svetovniItm[i] = [];
+    	svetovniItm[i][0] = json.drzave[i].long;
+    	svetovniItm[i][1] = json.drzave[i].value;
+    	svetovniItm[i][2] = json.drzave[i].name;
+    }
+    for(var i = 0; i < svetovniItm.length; i++){
+		console.log("Država: " + svetovniItm[i][0] + ", koda: " + svetovniItm[i][2] + ", itm: " + svetovniItm[i][1]);
+	}
+});
+
+
 function getSessionId() {
     var response = $.ajax({
         type: "POST",
@@ -193,6 +235,12 @@ function steviloRand3(min, max){
 	return stevilo;
 }
 
+function napolniMase(karDobim){
+	mase[steviloMas] = [];
+	mase[steviloMas][0] = karDobim.time;
+	mase[steviloMas][1] = karDobim.weight;
+	steviloMas++;
+}
 
 function preberiMeritveVitalnihZnakov() {
 	sessionId = getSessionId();	
@@ -203,6 +251,7 @@ function preberiMeritveVitalnihZnakov() {
 	if (!ehrId || ehrId.trim().length == 0 || !tip || tip.trim().length == 0) {
 		$("#preberiMeritveVitalnihZnakovSporocilo").html("<span class='obvestilo label label-warning fade-in'>Prosim, vnesite zahtevan podatek!");
 	} else {
+		$("svg").remove();
 		$.ajax({
 			url: baseUrl + "/demographics/ehr/" + ehrId + "/party",
 	    	type: 'GET',
@@ -210,6 +259,9 @@ function preberiMeritveVitalnihZnakov() {
 	    	success: function (data) {
 				var party = data.party;
 				$("#rezultatMeritveVitalnihZnakov").html("<br/><span>Pridobivanje podatkov za <b>'" + tip + "'</b> osebe <b>'" + party.firstNames + " " + party.lastNames + "'</b>.</span><br/><br/>");
+				
+				
+				// TELESNA TEMPERATURA
 				if (tip == "telesna temperatura") {
 					var AQL = 
 						"select " +
@@ -240,8 +292,11 @@ function preberiMeritveVitalnihZnakov() {
 							console.log(JSON.parse(err.responseText).userMessage);
 					    }
 					});
-				} 
+				}
+				
+				// TELESNA MASA
 				else if (tip == "telesna teža") {
+					graf = 0;
 					$.ajax({
 					    url: baseUrl + "/view/" + ehrId + "/" + "weight",
 					    type: 'GET',
@@ -264,22 +319,71 @@ function preberiMeritveVitalnihZnakov() {
 					    }
 					});					
 				}
+				
+				// INDEKS TELESENE MASE
 				else if(tip == "itm"){
+					graf = 0;
 					$.ajax({
 					    url: baseUrl + "/view/" + ehrId + "/" + "weight",
 					    type: 'GET',
 					    headers: {"Ehr-Session": sessionId},
 					    success: function (res) {
 					    	if (res.length > 0) {
-						    	var results = "<table class='table table-striped table-hover'><tr><th>Datum in ura</th><th class='text-right'>Indeks telesne mase</th></tr>";
-						    	$.ajax({
-						    		
-						    	});
 						        for (var i in res) {
-						            results += "<tr><td>" + res[i].time + "</td><td class='text-right'>" + res[i].weight + " " 	+ res[i].unit + "</td>";
+						        	napolniMase(res[i]);
 						        }
-						        results += "</table>";
-						        $("#rezultatMeritveVitalnihZnakov").append(results);
+						        
+						        $.ajax({
+									url: baseUrl + "/view/" + ehrId + "/" + "height",
+					    			type: 'GET',
+					    			headers: {"Ehr-Session": sessionId},
+					    			success: function (res) {
+					    				if (res.length > 0) {
+						        			for (var i in res) {
+						        				visine[steviloVisin] = [];
+						        				visine[steviloVisin][0] = res[i].time;
+						        				var visina = Math.round(res[i].height * 10 ) / 10 / 100;
+						        				visine[steviloVisin][1] = visina;
+						        				steviloVisin++;
+						        			}
+						        			
+						        			if(steviloMas > 0 && steviloVisin > 0){
+												var rezultat = [];
+												var steviloRezultatov = 0;
+												var izpis = "<table class='table table-striped table-hover'><tr><th>Datum in ura</th><th class='text-right'>Indeks telesne mase</th></tr>";
+						
+												// SPREHOD PO MERITVAH MASE (za vsako skupno meritev izračunaj ITM)
+												for(var i = 0; i < steviloMas; i++){
+													for(var j = 0; j < steviloVisin; j++){
+														if(mase[i][0] == visine[j][0]){
+															rezultat[steviloRezultatov] = [];
+															rezultat[steviloRezultatov][0] = mase[i][0];
+															var itm = Math.round((mase[i][1] / (visine[j][1] * visine[j][1])) * 10 ) / 10;
+															rezultat[steviloRezultatov][1] = itm;
+															izpis += "<tr><td>" + rezultat[steviloRezultatov][0] + "</td><td class='text-right'>" + rezultat[steviloRezultatov][1] + " kg/m^2" + "</td>";
+															steviloRezultatov++;
+															break;
+														}
+													}
+												}
+												izpis += "</table>";
+												$("#rezultatMeritveVitalnihZnakov").append(izpis);
+												mase = [];
+												visine = [];
+												rezultat = [];
+												steviloMas = 0;
+												steviloVisin = 0;
+												steviloRezultatov = 0;
+											}
+					    				} else {
+					    					$("#preberiMeritveVitalnihZnakovSporocilo").html("<span class='obvestilo label label-warning fade-in'>Ni podatkov!</span>");
+					    				}
+					    			},
+					    			error: function() {
+					    				$("#preberiMeritveVitalnihZnakovSporocilo").html("<span class='obvestilo label label-danger fade-in'>Napaka '" + JSON.parse(err.responseText).userMessage + "'!");
+										console.log(JSON.parse(err.responseText).userMessage);
+					    			}
+								});
 					    	} else {
 					    		$("#preberiMeritveVitalnihZnakovSporocilo").html("<span class='obvestilo label label-warning fade-in'>Ni podatkov!</span>");
 					    	}
@@ -288,8 +392,95 @@ function preberiMeritveVitalnihZnakov() {
 					    	$("#preberiMeritveVitalnihZnakovSporocilo").html("<span class='obvestilo label label-danger fade-in'>Napaka '" + JSON.parse(err.responseText).userMessage + "'!");
 							console.log(JSON.parse(err.responseText).userMessage);
 					    }
-					});		
+					});
 				}
+				
+				// INDEKS TELESNE MASE - GRAF
+				if (tip == "itmGraf") {
+					$.ajax({
+					    url: baseUrl + "/view/" + ehrId + "/" + "weight",
+					    type: 'GET',
+					    headers: {"Ehr-Session": sessionId},
+					    success: function (res) {
+					    	if (res.length > 0) {
+						        for (var i in res) {
+						        	napolniMase(res[i]);
+						        }
+						        
+						        $.ajax({
+									url: baseUrl + "/view/" + ehrId + "/" + "height",
+					    			type: 'GET',
+					    			headers: {"Ehr-Session": sessionId},
+					    			success: function (res) {
+					    				if (res.length > 0) {
+						        			for (var i in res) {
+						        				visine[steviloVisin] = [];
+						        				visine[steviloVisin][0] = res[i].time;
+						        				var visina = Math.round(res[i].height * 10 ) / 10 / 100;
+						        				visine[steviloVisin][1] = visina;
+						        				steviloVisin++;
+						        			}
+						        			
+						        			if(steviloMas > 0 && steviloVisin > 0){
+												var rezultat = [];
+												var steviloRezultatov = 0;
+												var izpis = "<table class='table'><tr><th>Zadnje meritve</th></tr>";
+												
+												// SPREHOD PO MERITVAH MASE (za vsako skupno meritev izračunaj ITM)
+												var stGumbov = 0;
+												for(var i = 0; i < steviloMas; i++){
+													for(var j = 0; j < steviloVisin; j++){
+														if(mase[i][0] == visine[j][0]){
+															if(stGumbov < 5){
+																stGumbov++;
+																rezultat[steviloRezultatov] = [];
+																rezultat[steviloRezultatov][0] = mase[i][0];
+																var itm = Math.round((mase[i][1] / (visine[j][1] * visine[j][1])) * 10 ) / 10;
+																rezultat[steviloRezultatov][1] = itm;
+																var id = "izbranaMeritevGraf" + stGumbov + itm;
+																izpis += "<tr><td><button id='";
+																izpis += id + "'type='button' class='btn btn-primary btn-sm' onclick='izrisiGraf(this.id)'>";
+																izpis += rezultat[steviloRezultatov][0];
+																izpis += "</button><span id='ujemanjeSporocilo";
+																izpis += stGumbov + "'></span>";
+																steviloRezultatov++;
+																//document.getElementById(id).addEventListener("click", nastaviID(id));
+																
+																break;
+															}
+														}
+													}
+												}
+												graf = 1;
+												izpis += "</table>";
+												$("#rezultatMeritveVitalnihZnakov").html(izpis);
+												mase = [];
+												visine = [];
+												rezultat = [];
+												steviloMas = 0;
+												steviloVisin = 0;
+												steviloRezultatov = 0;
+												stGumbov = 0;
+											}
+					    				} else {
+					    					$("#preberiMeritveVitalnihZnakovSporocilo").html("<span class='obvestilo label label-warning fade-in'>Ni podatkov!</span>");
+					    				}
+					    			},
+					    			error: function() {
+					    				$("#preberiMeritveVitalnihZnakovSporocilo").html("<span class='obvestilo label label-danger fade-in'>Napaka '" + JSON.parse(err.responseText).userMessage + "'!");
+										console.log(JSON.parse(err.responseText).userMessage);
+					    			}
+								});
+					    	} else {
+					    		$("#preberiMeritveVitalnihZnakovSporocilo").html("<span class='obvestilo label label-warning fade-in'>Ni podatkov!</span>");
+					    	}
+					    },
+					    error: function() {
+					    	$("#preberiMeritveVitalnihZnakovSporocilo").html("<span class='obvestilo label label-danger fade-in'>Napaka '" + JSON.parse(err.responseText).userMessage + "'!");
+							console.log(JSON.parse(err.responseText).userMessage);
+					    }
+					});
+				}	
 	    	},
 	    	error: function(err) {
 	    		$("#preberiMeritveVitalnihZnakovSporocilo").html("<span class='obvestilo label label-danger fade-in'>Napaka '" + JSON.parse(err.responseText).userMessage + "'!");
@@ -299,6 +490,219 @@ function preberiMeritveVitalnihZnakov() {
 	}
 }
 
+window.onresize = resize;
+
+function resize(){
+	if(stGrafov > 0 && graf == 1){
+		izrisiGraf();
+	}
+}
+// ujemanja:
+//	0 - procentualno ujemanje
+//	1 - država ujemanja
+//	2 - ITM države ujemanja
+//	3 - koda države ujemanja 
+function izrisiGraf(rezItm){
+	//console.log("Globalni itm: " + globalniItm);
+	$("svg").remove();
+	var mojItm = rezItm;
+	var itm = 0;
+	if (mojItm !== undefined) {
+        // argument passed and not undefined
+        if(mojItm.length <= 4){
+		itm = rezItm;
+		stGrafov++;
+		}
+		else{
+			itm = mojItm.substring(19, 23);
+			var stGumbov = mojItm.substring(18, 19);
+			globalniItm = itm;
+			stGrafov++;
+		}
+    } else {
+        // argument not passed or undefined
+        itm = globalniItm;
+    }
+	console.log(mojItm);
+	
+	
+	console.log("Stevilo gumbov: " + stGumbov);
+	
+	//console.log("Stevilo grafov: " + stGrafov);
+	
+	var ujemanja = [];
+	var ujem = 0;
+	var tmp = 0;
+	console.log("ITM: " + itm);
+	for(var i = 0; i < svetovniItm.length; i++){
+		ujemanja[i] = [];
+		if(itm < svetovniItm[i][1]){
+			ujem = itm / svetovniItm[i][1];
+			tmp = Math.round(ujem * 1000 ) / 1000;
+			ujemanja[i][0] = tmp;
+			ujemanja[i][1] = svetovniItm[i][0];
+			ujemanja[i][2] = svetovniItm[i][1];
+			ujemanja[i][3] = svetovniItm[i][2];
+		}
+		else{
+			ujem = svetovniItm[i][1] / itm;
+			tmp = Math.round(ujem * 1000 ) / 1000;
+			ujemanja[i][0] = tmp;
+			ujemanja[i][1] = svetovniItm[i][0];
+			ujemanja[i][2] = svetovniItm[i][1];
+			ujemanja[i][3] = svetovniItm[i][2];
+		}
+	}
+	sortiraj(ujemanja);
+	for(var i = 0; i < ujemanja.length; i++){
+		console.log("Ujemanje: " + ujemanja[i][0]*100 + " %, z državo: " + ujemanja[i][1]);
+	}
+	$("#ujemanjeSporocilo" + stGumbov).html("<span class='obvestilo label label-success fade-in'>ITM: " + itm + ". Največje ujemanje z državo: " + ujemanja[0][1] + "</span>");
+	var data = [];
+		
+	for(var i = 0; i < svetovniItm.length; i++){
+		data.push({name: ujemanja[i][3], value: ujemanja[i][0], long: ujemanja[i][1]});
+	}
+	/*var data = [
+  		{name: "Locke",    value: 0.04},
+  		{name: "Reyes",    value: 0.08},
+  		{name: "Ford",     value: 0.15},
+  		{name: "Jarrah",   value: 0.16},
+  		{name: "Shephard", value: 0.23},
+  		{name: "Kwon",     value: 0.42}
+	];*/
+	
+	var w = window.innerWidth / 2 - 100;
+	var margin = {top: 20, right: 20, bottom: 70, left: 40},
+    width = w - margin.left - margin.right,
+    height = 400 - margin.top - margin.bottom;
+
+	//var formatPercent = d3.format(".0%");
+	
+	var x = d3.scale.ordinal()
+    	.rangeRoundBands([0, width], .1);
+
+	var y = d3.scale.linear()
+    	.range([height, 0]);
+
+	var xAxis = d3.svg.axis()
+    	.scale(x)
+    	.orient("bottom");
+
+	var yAxis = d3.svg.axis()
+	    .scale(y)
+	    .orient("left")
+	    .ticks(10, "%");
+	
+	/*var tip = d3.tip()
+  		.attr('class', 'd3-tip')
+  		.offset([-10, 0])
+  		.html(function(d) {
+    		return "<strong>" + d.name + "</strong> <span style='color:blue'>" + d.value + "</span>";
+  		});
+  	*/
+  	
+	var svg = d3.select("#rezultatMeritveVitalnihZnakov").append("svg")
+	    .attr("width", width + margin.left + margin.right)
+	    .attr("height", height + margin.top + margin.bottom)
+	  .append("g")
+	    .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+	//svg.call(tip);
+	
+	  x.domain(data.map(function(d) { return d.long; }));
+	  y.domain([0, d3.max(data, function(d) { return d.value; })]);
+
+	  svg.append("g")
+	      .attr("class", "x axis")
+	      .attr("transform", "translate(0," + height + ")")
+	      .call(xAxis)
+	      .selectAll("text")  
+            .style("text-anchor", "end")
+            .attr("dx", "-.8em")
+            .attr("dy", ".15em")
+            .attr("transform", function(d) {
+                return "rotate(-65)" 
+            });
+
+	  svg.append("g")
+	      .attr("class", "y axis")
+	      .call(yAxis)
+	      svg.append("text")
+        	.attr("x", (width / 2))             
+        	.attr("y", 0 - (margin.top / 2))
+        	.attr("text-anchor", "middle")  
+        	.style("font-size", "14px") 
+        	.style("text-decoration", "strong")  
+        	.text("Ujemanje indeksa telesne mase s povprečjem v državah po svetu")
+	    	.append("text")
+	      .attr("transform", "rotate(-90)")
+	      .attr("y", 6)
+	      .attr("dy", ".71em")
+
+
+	  svg.selectAll(".bar")
+	      .data(data)
+	    .enter().append("rect")
+	      .attr("class", "bar")
+	      .attr("x", function(d) { return x(d.long); })
+	      .attr("width", x.rangeBand())
+	      .attr("y", function(d) { return y(d.value); })
+	      .attr("height", function(d) { return height - y(d.value); })
+		  //.on('mouseover', tip.show)
+      	  //.on('mouseout', tip.hide);
+      
+      /*svg.selectAll(".bartext")
+		.data(data)
+		.enter()
+		.append("text")
+		.attr("class", "bartext")
+		.attr("text-anchor", "middle")
+		//.attr("fill", "white")
+		.attr("x", function(d,i) {
+    		return x(d.name);
+		})
+		.attr("y", function(d,i) {
+		   return y(d.value);
+		})
+		.text(function(d){
+	 		return d.long;
+		})
+		.attr("transform", "rotate(-90)");*/
+		
+	function type(d) {
+	  d.value = +d.value;
+	  return d;
+	}
+}
+
+function sortiraj(tabela){
+	for(var i = 0; i < tabela.length-1 ; i++){
+		var maks = tabela[i][0];
+		var maksD = tabela[i][1];
+		var maksDi = tabela[i][2];
+		var maksK = tabela[i][3];
+		var iMaks = i;
+		
+		for(var j = i+1; j < tabela.length; j++){
+			if(tabela[j][0] > maks){
+				maks = tabela[j][0];
+				maksD = tabela[j][1];
+				maksDi = tabela[j][2];
+				maksK = tabela[j][3];
+				iMaks = j;
+			}
+		}
+		tabela[iMaks][0] = tabela[i][0];
+		tabela[iMaks][1] = tabela[i][1];
+		tabela[iMaks][2] = tabela[i][2];
+		tabela[iMaks][3] = tabela[i][3];
+		tabela[i][0] = maks;
+		tabela[i][1] = maksD;
+		tabela[i][2] = maksDi;
+		tabela[i][3] = maksK;
+	}
+}
 
 $(document).ready(function() {
 	$('#preberiObstojeciEHR').change(function() {
